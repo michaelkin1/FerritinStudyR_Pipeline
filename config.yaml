@@ -1,0 +1,718 @@
+# ==============================================================
+# Järnstudie pipeline - config.yaml
+# Run from project root: Rscript PipelineScripts/FIL6_run_pipeline.R config.yaml
+# ==============================================================
+# This config assumes:
+# - config.yaml is in project root
+# - scripts are in PipelineScripts/
+# - raw Excel file (DataFile.xlsx) is in project root
+# - pipeline is run from project root
+
+input:
+  path: "DataFile.xlsx"
+  sheet: 3
+  file_type: "xlsx"
+
+output:
+  dir: "data/interim/fil1"
+  clean_filename: "clean_long_data.csv"
+  log_filename: "change_log.csv"
+  review_filename: "review_flags.csv"
+  summary_filename: "processing_summary.csv"
+  copy_raw_filename: "raw_input_copy.xlsx"
+  write_review_even_if_empty: true
+  write_log_even_if_empty: true
+  keep_row_id: false
+
+columns:
+  id_column: "id"
+  clean_names: true
+
+  required:
+    - id
+    - kon
+    - alder
+    - tidigare_jarnsub
+
+  expected:
+    - id
+    - kon
+    - alder
+    - tidigare_jarnsub
+    - duroferon
+    - sideral
+
+cleaning:
+  trim_whitespace: true
+
+  na_strings:
+    - "NA"
+    - "N/A"
+    - ""
+    - " "
+
+  empty_strings_to_na: true
+
+id_standardization:
+  columns:
+    - id
+  remove_trailing_period: true
+  strip_all_whitespace: true
+
+value_maps:
+  tidigare_jarnsub_aliases:
+    columns:
+      - tidigare_jarnsub
+    ignore_case: true
+    map:
+      "Niferex dr.": "Niferex"
+      "Niferexdr.": "Niferex"
+      "Niferex droppar": "Niferex"
+      "Niferexdroppar": "Niferex"
+      "Niferex/Duroferon": "Niferex/Duroferon"
+      "Niferex / Duroferon": "Niferex/Duroferon"
+
+  kon_aliases:
+    columns:
+      - kon
+    ignore_case: true
+    map:
+      "man": "man"
+      "m": "man"
+      "male": "man"
+      "kvinna": "kvinna"
+      "k": "kvinna"
+      "female": "kvinna"
+
+yes_no_maps:
+  biv_map:
+    columns:
+      - biv
+    map:
+      "J": 1
+      "N": 0
+      "JA": 1
+      "NEJ": 0
+    invalid_to_na:
+      - "?"
+      - "J?"
+      - "N?"
+      - "JA?"
+      - "NEJ?"
+    parsed_column: "side_effect"
+
+  rls_map:
+    columns:
+      - rls
+    map:
+      "J": 1
+      "N": 0
+      "JA": 1
+      "NEJ": 0
+    invalid_to_na:
+      - "?"
+      - "J?"
+      - "N?"
+      - "JA?"
+      - "NEJ?"
+    parsed_column: "rls"
+
+numeric_columns:
+  - column: "hb"
+    decimal_comma: true
+    parsed_column: "hb"
+
+  - column: "ferritin"
+    decimal_comma: true
+    parsed_column: "ferritin"
+
+  - column: "crp"
+    decimal_comma: true
+    allow_operators:
+      - "<="
+      - ">="
+      - "<"
+      - ">"
+    extract_numeric_part: true
+    parsed_column: "crp"
+    operator_column: "crp_operator"
+    flag_operator_values: true
+
+  - column: "alder"
+    decimal_comma: false
+    parsed_column: "alder"
+
+date_columns:
+  - column: "blodgivning"
+    parsed_column: "date"
+    orders:
+      - "%y%m%d"      
+      - "ymd"
+      - "Ymd"
+      - "ymd HMS"
+      - "Ymd HMS"
+      - "ymd HM"
+      - "Ymd HM"
+    tz: "UTC"
+
+validation:
+  stop_on_missing_required_columns: true
+  review_unknown_values: true
+  report_unexpected_columns: false
+
+  allowed_values:
+    tidigare_jarnsub:
+      - "Niferex"
+      - "Duroferon"
+      - "Niferex/Duroferon"
+      - "Inga"
+    kon:
+      - "man"
+      - "kvinna"
+
+reshape:
+  enabled: true
+  cols_regex: "_(\\d+|k1|05|ff)$"
+  names_to:
+    - "variable"
+    - "visit_code"
+  names_pattern: "^(.*)_(\\d+|k1|05|ff)$"
+  values_to: "value"
+  values_drop_na: false
+
+  id_columns:
+    - "id"
+    - "kon"
+    - "alder"
+    - "tidigare_jarnsub"
+    - "duroferon"
+    - "sideral"
+
+  visit_code_map:
+    "k1": 0
+    "05": 5
+    "ff": 6
+
+  visit_type_map:
+    "k1": "control"
+    "05": "followup"
+    "ff": "followup_form"
+
+  parsed_visit_num_column: "visit_num"
+  parsed_visit_type_column: "visit_type"
+
+
+# ==============================================================
+# FIL 0 - Exploratory Data Analysis (optional, runs before FIL 1)
+# ==============================================================
+fil0:
+  enabled: true
+  output:
+    dir: "outputs/fil0"
+    report_filename: "eda_report.html"
+    summary_filename: "fil0_summary.csv"
+  outlier_thresholds:
+    hb_low: 6.0
+    hb_high: 19.0
+    ferritin_low: 3.0
+    ferritin_high: 600.0
+    crp_high: 120.0
+
+
+# ==============================================================
+# FIL 2 - Build analysis datasets from FIL 1 output
+# ==============================================================
+fil2:
+  input:
+    clean_path: "data/interim/fil1/clean_long_data.csv"
+
+  output:
+    dir: "data/interim/fil2"
+    analysis_long_filename: "analysis_long.csv"
+    gee_hb_ferritin_filename: "gee_hb_ferritin.csv"
+    gee_side_effect_filename: "gee_side_effect.csv"
+    review_filename: "fil2_review_flags.csv"
+    summary_filename: "fil2_summary.csv"
+    write_review_even_if_empty: true
+
+  columns:
+    id: "id"
+    sex_raw: "kon"
+    age_raw: "alder"
+    prior_substance_raw: "tidigare_jarnsub"
+    group_duroferon: "duroferon"
+    group_sideral: "sideral"
+    visit_num: "visit_num"
+    visit_type: "visit_type"
+    visit_code: "visit_code"
+    hb: "hb"
+    ferritin: "ferritin"
+    crp: "crp"
+    crp_operator: "crp_operator"
+    date: "date"
+    rls: "rls"
+    side_effect: "side_effect"
+
+  derive:
+    group:
+      output_column: "group"
+      duroferon_label: "Duroferon"
+      sideral_label: "Sideral"
+      unknown_label: "Unknown"
+      review_if_both_present: true
+
+    sex:
+      output_column: "sex"
+      allowed_values:
+        - "man"
+        - "kvinna"
+
+    age:
+      output_column: "age"
+
+    prior_substance:
+      output_column: "prior_substance"
+
+    ferritin_thresholds:
+      low_ferritin: 30
+      output_column: "low_ferritin"
+
+  datasets:
+    hb_ferritin:
+      enabled: true
+      keep_visits: [1, 2, 3, 4, 5]
+      keep_groups:
+        - "Duroferon"
+        - "Sideral"
+      require_non_missing:
+        - "id"
+        - "sex"
+        - "age"
+        - "prior_substance"
+        - "group"
+        - "visit_num"
+        - "hb"
+        - "ferritin"
+      visit_factor_levels: ["1", "2", "3", "4", "5"]
+      rls_measured_visits: [2, 3, 4]
+      rls_factor_levels: ["0", "1"]
+
+    side_effect:
+      enabled: true
+      keep_visits: [0, 2, 3, 4, 6]
+      keep_groups:
+        - "Duroferon"
+        - "Sideral"
+      require_non_missing:
+        - "id"
+        - "sex"
+        - "age"
+        - "prior_substance"
+        - "group"
+        - "visit_num"
+        - "rls"
+        - "side_effect"
+      exclude_prior_substance:
+        - "Inga"
+      visit_group_map:
+        Baseline: [0]
+        Mid: [2, 3]
+        Late: [4, 6]
+      visit_group_levels:
+        - "Baseline"
+        - "Mid"
+        - "Late"
+
+
+# ==============================================================
+# FIL 3 - Fit GEE models
+# ==============================================================
+fil3:
+  input:
+    gee_hb_ferritin_path: "data/interim/fil2/gee_hb_ferritin.csv"
+    gee_side_effect_path: "data/interim/fil2/gee_side_effect.csv"
+
+  output:
+    dir: "data/interim/fil3"
+    coefficients_filename: "gee_coefficients.csv"
+    model_info_filename: "gee_model_info.csv"
+    review_filename: "fil3_review_flags.csv"
+    summary_filename: "fil3_summary.csv"
+    model_rds_dir: "models"
+    combined_models_rds_filename: "gee_models.rds"
+    write_review_even_if_empty: true
+
+  dataset_prep:
+    gee_hb_ferritin:
+      factor_columns:
+        - "id"
+        - "group"
+        - "sex"
+        - "prior_substance"
+        - "visit_num_factor"
+        - "rls_model"
+      numeric_columns:
+        - "age"
+        - "visit_num"
+        - "hb"
+        - "ferritin"
+      factor_levels:
+        group: ["Duroferon", "Sideral"]
+        sex: ["man", "kvinna"]
+        visit_num_factor: ["1", "2", "3", "4", "5"]
+        rls_model: ["0", "1"]
+
+    gee_side_effect:
+      factor_columns:
+        - "id"
+        - "group"
+        - "sex"
+        - "prior_substance"
+        - "visit_group"
+        - "rls"
+      numeric_columns:
+        - "age"
+        - "visit_num"
+        - "side_effect"
+      factor_levels:
+        group: ["Duroferon", "Sideral"]
+        sex: ["man", "kvinna"]
+        visit_group: ["Baseline", "Mid", "Late"]
+        rls: ["0", "1"]
+
+  models:
+    hb:
+      enabled: true
+      dataset_key: "gee_hb_ferritin"
+      formula: "hb ~ visit_num_factor * sex * group + prior_substance + age"
+      family: "gaussian"
+      link: "identity"
+      corstr: "exchangeable"
+      id_column: "id"
+      save_rds_filename: "gee_hb.rds"
+
+    ferritin:
+      enabled: true
+      dataset_key: "gee_hb_ferritin"
+      formula: "ferritin ~ visit_num_factor * sex * group + prior_substance + age"
+      family: "gaussian"
+      link: "identity"
+      corstr: "exchangeable"
+      id_column: "id"
+      save_rds_filename: "gee_ferritin.rds"
+
+    side_effect:
+      enabled: true
+      dataset_key: "gee_side_effect"
+      formula: "side_effect ~ visit_group + group + sex + age + rls + prior_substance"
+      family: "binomial"
+      link: "logit"
+      corstr: "exchangeable"
+      id_column: "id"
+      save_rds_filename: "gee_side_effect.rds"
+      exponentiate: true
+
+
+# ==============================================================
+# FIL 4 - Marginal means and contrasts
+# ==============================================================
+fil4:
+  input:
+    combined_models_rds_path: "data/interim/fil3/gee_models.rds"
+
+  output:
+    dir: "data/interim/fil4"
+    emmeans_filename: "emmeans_results.csv"
+    contrasts_filename: "emmeans_contrasts.csv"
+    review_filename: "fil4_review_flags.csv"
+    summary_filename: "fil4_summary.csv"
+    rds_dir: "rds"
+    combined_emmeans_rds_filename: "emmeans_objects.rds"
+    write_review_even_if_empty: true
+
+  emmeans:
+    hb_visit_by_sex_group:
+      enabled: true
+      model_name: "hb"
+      specs: "~ visit_num_factor | sex * group"
+      type: "response"
+      at:
+        age:
+          method: "mean"
+        prior_substance:
+          method: "reference_level"
+      postprocess:
+        rename:
+          visit_num_factor: "visit_num"
+        numeric_copy_from_factor:
+          visit_num: "visit_num_num"
+      contrasts:
+        group_within_sex_visit:
+          enabled: true
+          method: "pairwise"
+          by: ["sex", "visit_num_factor"]
+          adjust: "none"
+        visit_within_sex_group:
+          enabled: true
+          method: "pairwise"
+          by: ["sex", "group"]
+          adjust: "none"
+
+    ferritin_visit_by_sex_group:
+      enabled: true
+      model_name: "ferritin"
+      specs: "~ visit_num_factor | sex * group"
+      type: "response"
+      at:
+        age:
+          method: "mean"
+        prior_substance:
+          method: "reference_level"
+      postprocess:
+        rename:
+          visit_num_factor: "visit_num"
+        numeric_copy_from_factor:
+          visit_num: "visit_num_num"
+      contrasts:
+        group_within_sex_visit:
+          enabled: true
+          method: "pairwise"
+          by: ["sex", "visit_num_factor"]
+          adjust: "none"
+        visit_within_sex_group:
+          enabled: true
+          method: "pairwise"
+          by: ["sex", "group"]
+          adjust: "none"
+
+    side_effect_visitgroup_by_sex_group:
+      enabled: true
+      model_name: "side_effect"
+      specs: "~ visit_group | sex * group"
+      type: "response"
+      at:
+        age:
+          method: "mean"
+        rls:
+          method: "reference_level"
+        prior_substance:
+          method: "reference_level"
+      contrasts:
+        group_within_sex_visitgroup:
+          enabled: true
+          method: "pairwise"
+          by: ["sex", "visit_group"]
+          adjust: "none"
+        visitgroup_within_sex_group:
+          enabled: true
+          method: "pairwise"
+          by: ["sex", "group"]
+          adjust: "none"
+
+
+# ==============================================================
+# FIL 5 - Final tables, figures, and report outputs
+# ==============================================================
+fil5:
+  input:
+    analysis_long_path: "data/interim/fil2/analysis_long.csv"
+    gee_hb_ferritin_path: "data/interim/fil2/gee_hb_ferritin.csv"
+    gee_side_effect_path: "data/interim/fil2/gee_side_effect.csv"
+    coefficients_path: "data/interim/fil3/gee_coefficients.csv"
+    model_info_path: "data/interim/fil3/gee_model_info.csv"
+    emmeans_path: "data/interim/fil4/emmeans_results.csv"
+    contrasts_path: "data/interim/fil4/emmeans_contrasts.csv"
+
+  output:
+    dir: "outputs/fil5"
+    tables_dir: "tables"
+    figures_dir: "figures"
+    report_dir: "report"
+    review_filename: "fil5_review_flags.csv"
+    summary_filename: "fil5_summary.csv"
+    write_review_even_if_empty: true
+
+  tables:
+    descriptive_hb_ferritin:
+      enabled: true
+      dataset_key: "gee_hb_ferritin"
+      group_by: ["visit_num", "sex", "group"]
+      numeric_vars: ["hb", "ferritin"]
+      filename: "table_descriptive_hb_ferritin.csv"
+      markdown_filename: "table_descriptive_hb_ferritin.md"
+
+    descriptive_side_effect:
+      enabled: true
+      dataset_key: "gee_side_effect"
+      group_by: ["visit_group", "sex", "group"]
+      proportion_vars: ["side_effect"]
+      filename: "table_descriptive_side_effect.csv"
+      markdown_filename: "table_descriptive_side_effect.md"
+
+    model_results:
+      enabled: true
+      drop_intercept: true
+      filename: "table_model_results.csv"
+      markdown_filename: "table_model_results.md"
+      label_replacements:
+        "visit_num_factor": "Visit"
+        "visit_group": "Visit group"
+        "prior_substance": "Prior iron"
+        "sex": "Sex"
+        "group": "Group"
+        "rls": "RLS"
+        ":": " × "
+
+    contrasts:
+      enabled: true
+      filename: "table_emmeans_contrasts.csv"
+      markdown_filename: "table_emmeans_contrasts.md"
+      keep_contrast_names:
+        - "group_within_sex_visit"
+        - "visit_within_sex_group"
+        - "group_within_sex_visitgroup"
+        - "visitgroup_within_sex_group"
+
+  plots:
+    hb_emmeans:
+      enabled: true
+      source_table: "emmeans"
+      model: "hb"
+      x: "visit_num_num"
+      color: "group"
+      facet: "sex"
+      x_label: "Visit"
+      y_label: "Estimated Hb (g/L)"
+      title: "Estimated marginal means for Hb"
+      filename: "plot_hb_emmeans.png"
+      width: 9
+      height: 5
+      dpi: 300
+
+    ferritin_emmeans:
+      enabled: true
+      source_table: "emmeans"
+      model: "ferritin"
+      x: "visit_num_num"
+      color: "group"
+      facet: "sex"
+      x_label: "Visit"
+      y_label: "Estimated ferritin"
+      title: "Estimated marginal means for ferritin"
+      filename: "plot_ferritin_emmeans.png"
+      width: 9
+      height: 5
+      dpi: 300
+
+    side_effect_emmeans:
+      enabled: true
+      source_table: "emmeans"
+      model: "side_effect"
+      x: "visit_group"
+      color: "group"
+      facet: "sex"
+      x_label: "Visit group"
+      y_label: "Predicted side-effect probability"
+      title: "Predicted side-effect probability"
+      filename: "plot_side_effect_emmeans.png"
+      width: 9
+      height: 5
+      dpi: 300
+
+    hb_raw_loess:
+      enabled: true
+      source_table: "gee_hb_ferritin"
+      outcome: "hb"
+      x: "visit_num"
+      color: "group"
+      facet: "sex"
+      x_label: "Visit"
+      y_label: "Observed Hb (g/L)"
+      title: "Observed Hb by visit with loess smooth"
+      filename: "plot_hb_raw_loess.png"
+      width: 9
+      height: 5
+      dpi: 300
+
+    ferritin_raw_loess:
+      enabled: true
+      source_table: "gee_hb_ferritin"
+      outcome: "ferritin"
+      x: "visit_num"
+      color: "group"
+      facet: "sex"
+      x_label: "Visit"
+      y_label: "Observed ferritin"
+      title: "Observed ferritin by visit with loess smooth"
+      filename: "plot_ferritin_raw_loess.png"
+      width: 9
+      height: 5
+      dpi: 300
+
+  report:
+    enabled: true
+    filename: "final_report_template.Rmd"
+    render: false
+    rendered_filename: "final_report.html"
+    title: "Järnstudie – Final summary"
+    include_sections:
+      descriptive_tables: true
+      model_results: true
+      contrasts: true
+      figures: true
+
+
+# ==============================================================
+# FIL 6 - Run the full pipeline from FIL 1 to FIL 5
+# ==============================================================
+fil6:
+  run:
+    start_step: 1
+    end_step: 5
+    stop_on_error: true
+
+  output:
+    dir: "outputs/fil6"
+    summary_filename: "pipeline_run_summary.csv"
+    log_filename: "pipeline_run_log.txt"
+
+  steps:
+    fil1:
+      enabled: true
+      script_path: "PipelineScripts/FIL1_preprocess_raw_to_clean.R"
+      function_name: "run_fil1"
+
+    fil2:
+      enabled: true
+      script_path: "PipelineScripts/FIL2_build_analysis_datasets.R"
+      function_name: "run_fil2"
+
+    fil3:
+      enabled: true
+      script_path: "PipelineScripts/FIL3_fit_gee_models.R"
+      function_name: "run_fil3"
+
+    fil4:
+      enabled: true
+      script_path: "PipelineScripts/FIL4_marginal_means_postprocess.R"
+      function_name: "run_fil4"
+
+    fil5:
+      enabled: true
+      script_path: "PipelineScripts/FIL5_final_outputs_report.R"
+      function_name: "run_fil5"
+
+
+
+# ==============================================================
+# FIL 7 - Narrative report (Word + HTML)
+# ==============================================================
+fil7:
+  output:
+    dir: "outputs/fil7"
+    docx_filename: "statistical_report.docx"
+    html_filename: "statistical_report.html"
+ 
+  significance:
+    alpha: 0.05
+ 

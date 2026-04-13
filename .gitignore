@@ -1,0 +1,49 @@
+# R session files
+.RData
+.Rhistory
+.Rprofile
+
+# Claude Code local configuration
+.claude/
+
+# Project documentation (local reference)
+CLAUDE.md
+TECHNICAL_OVERVIEW.md
+FIL0_IMPLEMENTATION.md
+
+# Data and outputs
+data/
+outputs/
+DataFile.xlsx
+
+# Working documents
+*.docx
+*.xlsx
+*.xls
+
+# Editor and IDE
+.Rproj.user/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# OS files
+.Thumbs.db
+.AppleDouble
+.LSOverride
+
+# Temporary and cache files
+*.tmp
+*.log
+*.cache
+
+# Environment files
+.Renviron
+.env
+
+# Test outputs (if needed)
+test_fil0_config.R
